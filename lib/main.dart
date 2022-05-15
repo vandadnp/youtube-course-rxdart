@@ -35,10 +35,14 @@ void testIt() async {
     (count) => 'Stream 1, count = $count',
   );
   final stream2 = Stream.periodic(
-    const Duration(seconds: 3),
+    const Duration(seconds: 10),
     (count) => 'Stream 2, count = $count',
   );
-  final result = stream1.mergeWith([stream2]);
+  final result = Rx.zip2(
+    stream1,
+    stream2,
+    (a, b) => 'Zipped result, A = ($a), B = ($b)',
+  );
   await for (final value in result) {
     value.log();
   }
