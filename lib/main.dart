@@ -33,17 +33,13 @@ void testIt() async {
   final stream1 = Stream.periodic(
     const Duration(seconds: 1),
     (count) => 'Stream 1, count = $count',
-  );
+  ).take(3);
   final stream2 = Stream.periodic(
-    const Duration(seconds: 3),
+    const Duration(seconds: 1),
     (count) => 'Stream 2, count = $count',
   );
-  final combined = Rx.combineLatest2(
-    stream1,
-    stream2,
-    (one, two) => 'One = ($one), two = ($two)',
-  );
-  await for (final value in combined) {
+  final result = stream1.concatWith([stream2]);
+  await for (final value in result) {
     value.log();
   }
 }
