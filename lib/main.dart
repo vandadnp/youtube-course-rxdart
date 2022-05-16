@@ -24,66 +24,105 @@ class App extends StatelessWidget {
   }
 }
 
-enum TypeOfThing { animal, person }
-
-@immutable
-class Thing {
-  final TypeOfThing type;
-  final String name;
-
-  const Thing({
-    required this.type,
-    required this.name,
-  });
-}
-
 @immutable
 class Bloc {
-  final Sink<TypeOfThing?> setTypeOfThing; // write-only
-  final Stream<TypeOfThing?> currentTypeOfThing; // read-only
-  final Stream<Iterable<Thing>> things;
+  final Sink<String?> setFirstName; // write-only
+  final Sink<String?> setLastName; // write-only
+  final Stream<String> fullName;
 
   const Bloc._({
-    required this.setTypeOfThing,
-    required this.currentTypeOfThing,
-    required this.things,
+    required this.setFirstName,
+    required this.setLastName,
+    required this.fullName,
   });
 
   void dispose() {
-    setTypeOfThing.close();
+    setFirstName.close();
+    setLastName.close();
   }
 
-  factory Bloc({
-    required Iterable<Thing> things,
-  }) {
-    final typeOfThingSubject = BehaviorSubject<TypeOfThing?>();
+  factory Bloc() {
+    final firstNameSubject = BehaviorSubject<String?>();
+    final lastNameSubject = BehaviorSubject<String?>();
 
-    final filteredThings = typeOfThingSubject
-        .debounceTime(const Duration(milliseconds: 300))
-        .map<Iterable<Thing>>((typeOfThing) {
-      if (typeOfThing != null) {
-        return things.where((thing) => thing.type == typeOfThing);
+    final Stream<String> fullName = Rx.combineLatest2(
+        firstNameSubject.startWith(null), lastNameSubject.startWith(null),
+        (String? firstName, String? lastName) {
+      if (firstName != null &&
+          firstName.isNotEmpty &&
+          lastName != null &&
+          lastName.isNotEmpty) {
+        return '$firstName $lastName';
       } else {
-        return things;
+        return 'Both first and last name must be provided';
       }
-    }).startWith(things);
+    });
 
     return Bloc._(
-      setTypeOfThing: typeOfThingSubject.sink,
-      currentTypeOfThing: typeOfThingSubject.stream,
-      things: filteredThings,
+      setFirstName: firstNameSubject.sink,
+      setLastName: lastNameSubject.sink,
+      fullName: fullName,
     );
   }
 }
 
-const things = [
-  Thing(name: 'Foo', type: TypeOfThing.person),
-  Thing(name: 'Bar', type: TypeOfThing.person),
-  Thing(name: 'Baz', type: TypeOfThing.person),
-  Thing(name: 'Bunz', type: TypeOfThing.animal),
-  Thing(name: 'Fluffers', type: TypeOfThing.animal),
-  Thing(name: 'Woofz', type: TypeOfThing.animal),
-];
+typedef AsyncSnapshotBuilderCallback<T> = Widget Function(
+  BuildContext context,
+  T? value,
+);
+
+class AsyncSnapshotBuilder<T> extends StatelessWidget {
+  final Stream<T> stream;
+  final AsyncSnapshotBuilderCallback<T>? onNone;
+  final AsyncSnapshotBuilderCallback<T>? onWaiting;
+  final AsyncSnapshotBuilderCallback<T>? onActive;
+  final AsyncSnapshotBuilderCallback<T>? onDone;
+
+  const AsyncSnapshotBuilder({
+    Key? key,
+    required this.stream,
+    this.onNone,
+    this.onWaiting,
+    this.onActive,
+    this.onDone,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<T>(
+      stream: stream,
+      builder: (context, snapshot) {
+        switch (snapshot.connectionState) {
+          case ConnectionState.none:
+            final callback = onNone ?? (_, __) => const SizedBox();
+            return callback(
+              context,
+              snapshot.data,
+            );
+          case ConnectionState.waiting:
+            final callback =
+                onWaiting ?? (_, __) => const CircularProgressIndicator();
+            return callback(
+              context,
+              snapshot.data,
+            );
+          case ConnectionState.active:
+            final callback = onActive ?? (_, __) => const SizedBox();
+            return callback(
+              context,
+              snapshot.data,
+            );
+          case ConnectionState.done:
+            final callback = onDone ?? (_, __) => const SizedBox();
+            return callback(
+              context,
+              snapshot.data,
+            );
+        }
+      },
+    );
+  }
+}
 
 class HomePage extends StatefulWidget {
   const HomePage({Key? key}) : super(key: key);
@@ -94,13 +133,10 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   late final Bloc bloc;
-
   @override
   void initState() {
     super.initState();
-    bloc = Bloc(
-      things: things,
-    );
+    bloc = Bloc();
   }
 
   @override
@@ -113,48 +149,32 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('FilterChip with RxDart'),
+        title: const Text('CombineLatest with RxDart'),
       ),
-      body: Column(
-        children: [
-          StreamBuilder<TypeOfThing?>(
-            stream: bloc.currentTypeOfThing,
-            builder: (context, snapshot) {
-              final selectedTypeOfThing = snapshot.data;
-              return Wrap(
-                children: TypeOfThing.values.map((typeOfThing) {
-                  return FilterChip(
-                    selectedColor: Colors.blueAccent[100],
-                    onSelected: (selected) {
-                      final type = selected ? typeOfThing : null;
-                      bloc.setTypeOfThing.add(type);
-                    },
-                    label: Text(typeOfThing.name),
-                    selected: selectedTypeOfThing == typeOfThing,
-                  );
-                }).toList(),
-              );
-            },
-          ),
-          Expanded(
-            child: StreamBuilder<Iterable<Thing>>(
-              stream: bloc.things,
-              builder: (context, snapshot) {
-                final things = snapshot.data ?? [];
-                return ListView.builder(
-                  itemCount: things.length,
-                  itemBuilder: (context, index) {
-                    final thing = things.elementAt(index);
-                    return ListTile(
-                      title: Text(thing.name),
-                      subtitle: Text(thing.type.name),
-                    );
-                  },
-                );
-              },
+      body: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Column(
+          children: [
+            TextField(
+              decoration: const InputDecoration(
+                hintText: 'Enter first name here...',
+              ),
+              onChanged: bloc.setFirstName.add,
             ),
-          ),
-        ],
+            TextField(
+              decoration: const InputDecoration(
+                hintText: 'Enter last name here...',
+              ),
+              onChanged: bloc.setLastName.add,
+            ),
+            AsyncSnapshotBuilder<String>(
+              stream: bloc.fullName,
+              onActive: (context, String? value) {
+                return Text(value ?? '');
+              },
+            )
+          ],
+        ),
       ),
     );
   }
