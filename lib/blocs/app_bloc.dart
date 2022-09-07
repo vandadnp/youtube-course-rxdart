@@ -43,8 +43,8 @@ class AppBloc {
     // current view
 
     final Stream<CurrentView> currentView = Rx.merge([
-      currentViewBasedOnAuthStatus,
       viewsBloc.currentView,
+      currentViewBasedOnAuthStatus,
     ]);
 
     // isLoading
